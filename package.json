@@ -12,7 +12,7 @@
     "backend"
   ],
   "author": "harsh atkare",
-  "license": "ISC",
+  "licdcense": "ISC",
   "devDependencies": {
     "nodemon": "^3.1.9"
   }
