@@ -1,4 +1,4 @@
-import mongoose, {Schema} from mongoose
+import mongoose, {Schema} from "mongoose"
 
 const userSchema = new Schema({
     username:{
@@ -30,7 +30,7 @@ const userSchema = new Schema({
         type:String,
     },
     watchHistory:{
-        type:Schema.Type.ObjectId,
+        type:Schema.Types.ObjectId,
         ref:"Video"
     },
     password:{
@@ -75,4 +75,4 @@ userSchema.methods.generateRefreshToken = function(){
 
 
 
-export const user=mongoose.model("User",userSchema)
+export const User=mongoose.model("User",userSchema)
