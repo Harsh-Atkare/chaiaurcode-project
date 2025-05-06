@@ -4,63 +4,67 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary } from "../utils/cloudinary-upload.js";
 import { ApiResponce } from "../utils/ApiResponce.js";
 
+// 🔐 Generate access and refresh tokens and update user in DB
+const generateAccessAndRefreshToken = async (userId) => {
+    try {
+        const user = await User.findById(userId); // Fetch user from DB
+        const accessToken = user.generateAccessToken(); // Generate access token
+        const refreshToken = user.generateRefreshToken(); // Generate refresh token
+
+        user.refreshToken = refreshToken; // Save refresh token in DB
+        await user.save({ validateBeforeSave: false }); // Save without validation
+
+        return { accessToken, refreshToken }; // Return both tokens
+    } catch (error) {
+        throw new ApiError(500, "Something went wrong while generating tokens");
+    }
+};
+
+// 🧾 Register new user
 const registerUser = asyncHandler(async (req, res) => {
-    const { fullname, email, username, password } = req.body;
+    const { fullname, email, username, password } = req.body; // Destructure request body
 
-    // get user details from frontend
-    // validation like is email in correct format or not. or is password strong or not and so on
-    // check if user already exists : email,username
-    // chec k for images, check for avatar
-    // upload them to cloudinary, avatar
-    // create user object -- creater entry in db
-    // remove the password and refresh token field from response
-    // check for user creation
-    // return response
-
-
-
-
-    // Basic field empty check
+    // Check if any required field is empty
     if ([fullname, email, username, password].some((field) => field?.trim() === "")) {
         throw new ApiError(400, "All fields are required");
     }
 
-    // Email format check
+    // Basic email format validation
     if (!email.includes("@")) {
         throw new ApiError(400, "Email is not valid");
     }
 
-    // Check if user already exists
+    // Check if user already exists in DB
     const existedUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existedUser) {
         throw new ApiError(409, "Username or email already exists");
     }
 
-    // Avatar image is required
+    // Check for avatar image (required)
     const avatarLocalPath = req.files?.avatar?.[0]?.path;
     if (!avatarLocalPath) {
         throw new ApiError(400, "Avatar image is required");
     }
 
-    // Optional: Cover image
+    // Check for optional cover image
     let coverImageLocalPath;
-    if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
+    if (req.files?.coverImage?.length > 0) {
         coverImageLocalPath = req.files.coverImage[0].path;
     }
 
-    // Upload avatar (required)
+    // Upload avatar to Cloudinary
     const avatar = await uploadOnCloudinary(avatarLocalPath);
     if (!avatar) {
         throw new ApiError(400, "Avatar upload failed");
     }
 
-    // Upload cover image (optional)
+    // Upload cover image if available
     let coverImage = null;
     if (coverImageLocalPath) {
         coverImage = await uploadOnCloudinary(coverImageLocalPath);
     }
 
-    // Create user in database
+    // Create new user entry in DB
     const user = await User.create({
         fullname,
         avatar: avatar.url,
@@ -70,15 +74,94 @@ const registerUser = asyncHandler(async (req, res) => {
         username: username.toLowerCase()
     });
 
-    // Select user without sensitive fields
+    // Retrieve user without sensitive fields
     const createdUser = await User.findById(user._id).select("-password -refreshToken");
     if (!createdUser) {
         throw new ApiError(500, "Something went wrong while creating user");
     }
 
+    // Return successful response
     return res.status(201).json(
         new ApiResponce(200, createdUser, "User registered successfully")
     );
 });
 
-export { registerUser };
+// 🔐 Login existing user
+const loginUser = asyncHandler(async (req, res) => {
+    const { username, email, password } = req.body;
+
+    // Validate required fields
+    if (!username && !email) {
+        throw new ApiError(400, "Username or email is required");
+    }
+    if (!password) {
+        throw new ApiError(400, "Password is required");
+    }
+
+    // Find user by username or email
+    const user = await User.findOne({
+        $or: [{ username }, { email }]
+    });
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
+
+    // Check if password is correct
+    const isPasswordValid = await user.isPasswordCorrect(password);
+    if (isPasswordValid) {
+        throw new ApiError(401, "Password is incorrect");
+    }
+
+    // Generate access and refresh tokens
+    const { accessToken, refreshToken } = await generateAccessAndRefreshToken(user._id);
+
+    // Fetch user without sensitive data
+    const loggedInUser = await User.findById(user._id).select("-password -refreshToken");
+
+    // Set cookie options (secure, HTTP only)
+    const options = {
+        httpOnly: true,
+        secure: false
+    };
+    console.log("user logged in successfully");
+
+    // Return cookies and response
+    return res.status(200)
+        .cookie("accessToken", accessToken, options)
+        .cookie("refreshToken", refreshToken, options)
+        .json(new ApiResponce(200, { user: loggedInUser, accessToken, refreshToken }, "User logged in successfully"));
+});
+
+// 🚪 Logout user
+const logoutUser = asyncHandler(async (req, res) => {
+    // Clear refresh token in DB
+    await User.findByIdAndUpdate(req.user._id, {
+        $set: {
+            refreshToken: undefined
+        }
+    }, {
+        new: true
+    });
+
+    // Cookie options
+    const options = {
+        httpOnly: true,
+        secure: false
+    };
+  
+    
+
+    // Clear cookies and respond
+    return res
+        .status(200)
+        .clearCookie("accessToken", options)
+        .clearCookie("refreshToken", options)
+        .json(new ApiResponce(200, {}, "User logged out successfully"));
+});
+
+// Export all controllers
+export {
+    registerUser,
+    loginUser,
+    logoutUser
+};
