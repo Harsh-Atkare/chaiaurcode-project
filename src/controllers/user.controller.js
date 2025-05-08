@@ -110,7 +110,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
     // Check if password is correct
     const isPasswordValid = await user.isPasswordCorrect(password);
-    if (isPasswordValid) {
+    if (!isPasswordValid) {
         throw new ApiError(401, "Password is incorrect");
     }
 
@@ -139,7 +139,7 @@ const logoutUser = asyncHandler(async (req, res) => {
     // Clear refresh token in DB
     await User.findByIdAndUpdate(req.user._id, {
         $set: {
-            refreshToken: undefined
+            refreshToken: 1
         }
     }, {
         new: true
@@ -300,7 +300,6 @@ const getUserChannalProfile = asyncHandler(async (req, res) => {
     if (!username) {
         throw new ApiError(400, "Username is missing in request parameters");
     }
-
     const channal = await User.aggregate([
         {
             $match: {
@@ -364,7 +363,7 @@ const getUserChannalProfile = asyncHandler(async (req, res) => {
 const getWatchHistory = asyncHandler(async (req, res) => {
     const user = await User.aggregate([
         {
-            $match: { _id: mongoose.Types.ObjectId(req.user?._id) }
+            $match: { _id: new mongoose.Types.ObjectId(req.user?._id) }
         },
         {
             $lookup: {
